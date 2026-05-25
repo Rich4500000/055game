@@ -127,35 +127,19 @@ class RadarSystem:
         self.jamming_level = 0.0
         self.landmass = build_landmass()
         self.landmass_offset = pygame.Vector2(0, 0)
-        self.dragging_landmass = False
-        self.drag_offset = pygame.Vector2(0, 0)
+        self.landmass_velocity = pygame.Vector2(random.uniform(-0.3, 0.3), random.uniform(-0.15, 0.15))
+        self.land_spawn_timer = 0.0
         self.spawn_wave()
 
     def reset(self):
         self.__init__()
 
-    def handle_landmass_drag(self, mouse_pos, drag_start_pos=None):
-        """处理陆地轮廓拖拽功能。"""
-        land_rect = self.get_landmass_bounding_rect()
-        if drag_start_pos is None:
-            if self.dragging_landmass:
-                return True
-            return land_rect.collidepoint(mouse_pos)
-        else:
-            if not self.dragging_landmass:
-                if land_rect.collidepoint(drag_start_pos):
-                    self.dragging_landmass = True
-                    center = land_rect.center
-                    self.drag_offset = pygame.Vector2(drag_start_pos[0] - center[0], drag_start_pos[1] - center[1])
-            if self.dragging_landmass:
-                new_center = (mouse_pos[0] - self.drag_offset.x, mouse_pos[1] - self.drag_offset.y)
-                delta = pygame.Vector2(new_center[0] - land_rect.center[0], new_center[1] - land_rect.center[1])
-                self.landmass_offset += delta
-            return self.dragging_landmass
-
-    def release_landmass_drag(self):
-        """释放陆地轮廓拖拽。"""
-        self.dragging_landmass = False
+    def update_landmass_animation(self, dt):
+        """更新陆地轮廓航行动画，模拟船只航行。"""
+        self.landmass_offset += self.landmass_velocity * dt
+        if random.random() < 0.005:
+            self.landmass_velocity.x = random.uniform(-0.3, 0.3)
+            self.landmass_velocity.y = random.uniform(-0.15, 0.15)
 
     def get_landmass_bounding_rect(self):
         """获取陆地轮廓的边界矩形。"""
@@ -320,6 +304,11 @@ class RadarSystem:
         目标进入雷达半径后视为S波段发现，随后自动进入X波段精确跟踪。
         """
         self.theta = (self.theta + RADAR_SCAN_SPEED * dt) % math.tau
+        self.update_landmass_animation(dt)
+        self.land_spawn_timer += dt
+        if self.land_spawn_timer >= 8.0 and len([t for t in self.targets if t.type == TARGET_LAND]) < 3:
+            self.spawn_fixed_land_target()
+            self.land_spawn_timer = 0.0
         alive_targets = []
         network_range = RADAR_RADIUS if self.network_enabled else km_to_px(ORGANIC_RADAR_RANGE_KM)
         effective_range = network_range * (1.0 - 0.35 * self.jamming_level)

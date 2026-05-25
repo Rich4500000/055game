@@ -153,14 +153,7 @@ class Game:
                 return
         self.radar.pick_target(pos)
 
-    def handle_mouse_drag(self, pos, drag_start):
-        """处理鼠标拖拽事件，用于移动雷达上的陆地轮廓。"""
-        if self.state != "playing":
-            return
-        self.radar.handle_landmass_drag(pos, drag_start)
-
     def process_events(self):
-        drag_start = None
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
@@ -170,14 +163,6 @@ class Game:
                 self.handle_key(event.key)
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 self.handle_mouse(event.pos)
-                drag_start = event.pos
-            elif event.type == pygame.MOUSEMOTION:
-                if drag_start is not None:
-                    self.handle_mouse_drag(event.pos, drag_start)
-            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                if self.radar.dragging_landmass:
-                    self.radar.release_landmass_drag()
-                drag_start = None
 
     def apply_breakthroughs(self):
         """处理突破防御圈的目标，扣分、扣生命并触发游戏失败条件。"""
