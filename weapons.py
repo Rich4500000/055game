@@ -55,6 +55,8 @@ class Missile:
         self.speed = kmh_to_px_per_sec(speed_kmh)
         self.alive = True
         self.trail = []
+        self.age = 0.0
+        self.terminal = False
 
     def update(self, dt):
         """导弹持续追踪当前目标。
@@ -64,11 +66,18 @@ class Missile:
         if not self.target or not self.target.alive:
             self.alive = False
             return False
+        self.age += dt
         direction = self.target.pos - self.pos
         if direction.length() < 8:
             self.alive = False
             return True
-        self.pos += direction.normalize() * self.speed * dt
+        target_dir = direction.normalize()
+        self.terminal = self.type in ("YJ-18", "YJ-21") and direction.length() < 55
+        speed = self.speed * (1.85 if self.terminal and self.type == "YJ-18" else 2.4 if self.terminal and self.type == "YJ-21" else 1.0)
+        if self.terminal:
+            weave = pygame.Vector2(-target_dir.y, target_dir.x) * math.sin(self.age * 24) * (0.55 if self.type == "YJ-18" else 0.9)
+            target_dir = (target_dir + weave).normalize()
+        self.pos += target_dir * speed * dt
         self.trail.append(tuple(self.pos))
         self.trail = self.trail[-14:]
         return False
@@ -77,9 +86,33 @@ class Missile:
         for i, point in enumerate(self.trail):
             alpha_color = (180 + i * 5, 210 + i * 3, 255)
             pygame.draw.circle(surface, alpha_color, point, max(1, i // 4))
-        pygame.draw.circle(surface, WHITE, self.pos, 4)
         color = CYAN if self.type == "HHQ-9B" else GREEN if self.type == "HHQ-16B" else RED if self.type == "YJ-21" else ORANGE if self.type == "CJ-10" else YELLOW
-        pygame.draw.circle(surface, color, self.pos, 7, 1)
+        self.draw_missile_shape(surface, color)
+
+    def draw_missile_shape(self, surface, color):
+        """用多边形绘制有朝向的导弹形状。"""
+        if self.target and self.target.alive:
+            direction = self.target.pos - self.pos
+        elif len(self.trail) >= 2:
+            direction = pygame.Vector2(self.trail[-1]) - pygame.Vector2(self.trail[-2])
+        else:
+            direction = pygame.Vector2(1, 0)
+        if direction.length_squared() == 0:
+            direction = pygame.Vector2(1, 0)
+        forward = direction.normalize()
+        side = pygame.Vector2(-forward.y, forward.x)
+        length = 18 if self.type in ("YJ-18", "YJ-21", "CJ-10") else 14
+        width = 5 if self.type in ("YJ-18", "YJ-21") else 4
+        nose = self.pos + forward * length * 0.58
+        tail = self.pos - forward * length * 0.42
+        body = [nose, tail + side * width, tail - side * width]
+        pygame.draw.polygon(surface, color, body)
+        pygame.draw.polygon(surface, WHITE, body, 1)
+        fin_back = tail - forward * 2
+        pygame.draw.line(surface, color, fin_back + side * (width + 3), tail, 2)
+        pygame.draw.line(surface, color, fin_back - side * (width + 3), tail, 2)
+        if self.terminal:
+            pygame.draw.circle(surface, RED, self.pos, 10, 1)
 
 
 class ExplosionParticle:

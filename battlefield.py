@@ -15,7 +15,9 @@ from config import (
     YJ18_AMMO,
     YJ21_AMMO,
     TARGET_AIRCRAFT,
+    TARGET_LAND,
     TARGET_MISSILE,
+    TARGET_SEA,
     distance,
 )
 
@@ -30,6 +32,8 @@ class BattlefieldManager:
         self.low_altitude_timer = 0.0
         self.aew_gap_timer = 0.0
         self.escort_cooldown = 4.0
+        self.strike_window_timer = 0.0
+        self.aew_sweep_timer = 0.0
         self.log = ["航母/预警机数据链接入：1000km态势圈"]
 
     def reset(self):
@@ -45,6 +49,10 @@ class BattlefieldManager:
             return "ECM压制"
         if self.aew_gap_timer > 0:
             return "本舰雷达"
+        if self.strike_window_timer > 0:
+            return "对陆窗口"
+        if self.aew_sweep_timer > 0:
+            return "预警补盲"
         if self.low_altitude_timer > 0:
             return "低空突防"
         if self.cover_timer > 0:
@@ -58,6 +66,8 @@ class BattlefieldManager:
         self.cover_timer = max(0.0, self.cover_timer - dt)
         self.low_altitude_timer = max(0.0, self.low_altitude_timer - dt)
         self.aew_gap_timer = max(0.0, self.aew_gap_timer - dt)
+        self.strike_window_timer = max(0.0, self.strike_window_timer - dt)
+        self.aew_sweep_timer = max(0.0, self.aew_sweep_timer - dt)
         self.escort_cooldown = max(0.0, self.escort_cooldown - dt)
 
         self.apply_network_state(radar)
@@ -122,7 +132,10 @@ class BattlefieldManager:
 
     def trigger_event(self, radar, weapons):
         """随机选择并执行一个战场情景。"""
-        choices = ["jamming", "sea_skimmer", "fleet_cover", "replenish", "damage_control", "decoy", "aew_gap"]
+        choices = [
+            "jamming", "sea_skimmer", "fleet_cover", "replenish", "damage_control",
+            "decoy", "aew_gap", "land_strike", "aew_sweep", "hypersonic_raid"
+        ]
         event = random.choice(choices)
 
         if event == "jamming":
@@ -144,6 +157,33 @@ class BattlefieldManager:
             self.low_altitude_timer = 5.0
             radar.message = "低空掠海目标突防，注意近防炮末端拦截"
             self.push_log("低空掠海反舰导弹从外圈切入")
+            return 0
+
+        if event == "hypersonic_raid":
+            radar.spawn_single_target(TARGET_MISSILE, speed_range=(3600, 4800), path="sine", wave_amp=2)
+            self.low_altitude_timer = 4.0
+            radar.message = "高速突防目标出现，优先HHQ-9B/16B接战"
+            self.push_log("高速突防：来袭弹进入外层防空圈")
+            return 0
+
+        if event == "land_strike":
+            self.strike_window_timer = 10.0
+            for _ in range(2):
+                radar.spawn_fixed_land_target()
+            radar.message = "对陆打击窗口：选择陆上目标发射CJ-10"
+            self.push_log("CJ-10窗口：陆上节点暴露")
+            return 0
+
+        if event == "aew_sweep":
+            self.aew_sweep_timer = 6.0
+            radar.network_enabled = True
+            radar.network_quality = 1.0
+            for target in radar.targets:
+                target.detected = True
+                if target.type != "decoy_target":
+                    target.tracked = True
+            radar.message = "预警机补盲扫描：目标短时全显"
+            self.push_log("预警机补盲：目标全显")
             return 0
 
         if event == "fleet_cover":

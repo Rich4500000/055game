@@ -278,6 +278,14 @@ class DefenseUI:
         pygame.draw.rect(surface, GREEN_DIM, map_rect, 1, border_radius=6)
 
         center = pygame.Vector2(map_rect.center)
+        land = [
+            (map_rect.right - 54, map_rect.top + 12), (map_rect.right - 18, map_rect.top + 44),
+            (map_rect.right - 30, map_rect.top + 96), (map_rect.right - 70, map_rect.top + 132),
+            (map_rect.right - 44, map_rect.bottom - 20), (map_rect.right - 8, map_rect.bottom - 8),
+            (map_rect.right - 8, map_rect.top + 8),
+        ]
+        pygame.draw.polygon(surface, (18, 50, 37), land)
+        pygame.draw.lines(surface, GREEN_DIM, False, land, 1)
         # 航母编队基准位置。
         carrier = (center.x - 36, center.y + 22)
         pygame.draw.ellipse(surface, (55, 88, 110), (carrier[0] - 28, carrier[1] - 8, 56, 16))
@@ -476,6 +484,10 @@ def compact_log(text):
         ("L-DEW", "LZR命中"),
         ("激光", "LZR"),
         ("1130", "1130开火"),
+        ("对陆", "CJ10窗口"),
+        ("预警机", "AEW"),
+        ("高速突防", "HYPER"),
+        ("陆上", "陆上节点"),
         ("未命中", "MISS"),
     ]
     for key, value in pairs:

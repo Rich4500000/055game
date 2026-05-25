@@ -125,6 +125,7 @@ class RadarSystem:
         self.network_enabled = True
         self.network_quality = 1.0
         self.jamming_level = 0.0
+        self.landmass = build_landmass()
         self.spawn_wave()
 
     def reset(self):
@@ -209,6 +210,17 @@ class RadarSystem:
             self.targets.append(target)
             self.next_id += 1
 
+    def spawn_fixed_land_target(self):
+        """在陆地轮廓附近生成固定陆上节点，供CJ-10打击。"""
+        offset = random.choice(self.landmass[2:9])
+        jitter = pygame.Vector2(random.uniform(-18, 18), random.uniform(-14, 14))
+        pos = self.center_vector() + pygame.Vector2(offset) + jitter
+        target = Target(self.next_id, TARGET_LAND, pos, pygame.Vector2(0, 0), "line", 0)
+        target.detected = True
+        target.tracked = True
+        self.targets.append(target)
+        self.next_id += 1
+
     def update(self, dt):
         """更新扫描线和目标状态。
 
@@ -278,6 +290,9 @@ class RadarSystem:
 
     def draw(self, surface, font):
         """绘制圆形雷达屏、距离圈、扫描线、目标点和锁定框。"""
+        old_clip = surface.get_clip()
+        surface.set_clip(pygame.Rect(14, 14, 432, 432))
+        self.draw_landmass(surface)
         pygame.draw.circle(surface, GREEN_DIM, RADAR_CENTER, RADAR_RADIUS, 2)
         pygame.draw.circle(surface, GREEN_DIM, RADAR_CENTER, int(RADAR_RADIUS * 0.66), 1)
         pygame.draw.circle(surface, GREEN_DIM, RADAR_CENTER, int(RADAR_RADIUS * 0.33), 1)
@@ -298,3 +313,21 @@ class RadarSystem:
 
         for target in self.targets:
             target.draw(surface, font)
+        surface.set_clip(old_clip)
+
+    def draw_landmass(self, surface):
+        """绘制陆地轮廓，让陆上目标/CJ-10任务有地理语境。"""
+        land_points = [(RADAR_CENTER[0] + x, RADAR_CENTER[1] + y) for x, y in self.landmass]
+        pygame.draw.polygon(surface, (17, 48, 37), land_points)
+        pygame.draw.lines(surface, GREEN_DIM, False, land_points, 2)
+        for point in land_points[::2]:
+            pygame.draw.circle(surface, (35, 86, 55), point, 2)
+
+
+def build_landmass():
+    """生成雷达右侧沿海陆地的轮廓点。"""
+    return [
+        (78, -205), (128, -190), (178, -162), (208, -118), (222, -72),
+        (214, -30), (190, 8), (162, 38), (132, 70), (116, 108),
+        (146, 160), (222, 216), (250, 226), (250, -226),
+    ]
