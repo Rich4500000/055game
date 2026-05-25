@@ -126,10 +126,100 @@ class RadarSystem:
         self.network_quality = 1.0
         self.jamming_level = 0.0
         self.landmass = build_landmass()
+        self.landmass_offset = pygame.Vector2(0, 0)
+        self.dragging_landmass = False
+        self.drag_offset = pygame.Vector2(0, 0)
         self.spawn_wave()
 
     def reset(self):
         self.__init__()
+
+    def handle_landmass_drag(self, mouse_pos, drag_start_pos=None):
+        """处理陆地轮廓拖拽功能。"""
+        land_rect = self.get_landmass_bounding_rect()
+        if drag_start_pos is None:
+            if self.dragging_landmass:
+                return True
+            return land_rect.collidepoint(mouse_pos)
+        else:
+            if not self.dragging_landmass:
+                if land_rect.collidepoint(drag_start_pos):
+                    self.dragging_landmass = True
+                    center = land_rect.center
+                    self.drag_offset = pygame.Vector2(drag_start_pos[0] - center[0], drag_start_pos[1] - center[1])
+            if self.dragging_landmass:
+                new_center = (mouse_pos[0] - self.drag_offset.x, mouse_pos[1] - self.drag_offset.y)
+                delta = pygame.Vector2(new_center[0] - land_rect.center[0], new_center[1] - land_rect.center[1])
+                self.landmass_offset += delta
+            return self.dragging_landmass
+
+    def release_landmass_drag(self):
+        """释放陆地轮廓拖拽。"""
+        self.dragging_landmass = False
+
+    def get_landmass_bounding_rect(self):
+        """获取陆地轮廓的边界矩形。"""
+        land_points = [(RADAR_CENTER[0] + x + self.landmass_offset.x, RADAR_CENTER[1] + y + self.landmass_offset.y) for x, y in self.landmass]
+        min_x = min(p[0] for p in land_points)
+        max_x = max(p[0] for p in land_points)
+        min_y = min(p[1] for p in land_points)
+        max_y = max(p[1] for p in land_points)
+        return pygame.Rect(min_x, min_y, max_x - min_x, max_y - min_y)
+
+    def is_point_on_land(self, pos):
+        """检查点是否在陆地轮廓内。"""
+        land_points = [(RADAR_CENTER[0] + x + self.landmass_offset.x, RADAR_CENTER[1] + y + self.landmass_offset.y) for x, y in self.landmass]
+        return self.point_in_polygon(pos, land_points)
+
+    def point_in_polygon(self, point, polygon):
+        """射线法判断点是否在多边形内。"""
+        x, y = point
+        n = len(polygon)
+        inside = False
+        p1x, p1y = polygon[0]
+        for i in range(1, n + 1):
+            p2x, p2y = polygon[i % n]
+            if y > min(p1y, p2y):
+                if y <= max(p1y, p2y):
+                    if x <= max(p1x, p2x):
+                        if p1y != p2y:
+                            xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                        if p1x == p2x or x <= xinters:
+                            inside = not inside
+            p1x, p1y = p2x, p2y
+        return inside
+
+    def get_land_point_near(self, pos, max_distance=30):
+        """获取距离指定位置最近的陆地上的点。"""
+        land_points = [(RADAR_CENTER[0] + x + self.landmass_offset.x, RADAR_CENTER[1] + y + self.landmass_offset.y) for x, y in self.landmass]
+        best_point = None
+        best_dist = max_distance
+        for i in range(len(land_points)):
+            p1 = land_points[i]
+            p2 = land_points[(i + 1) % len(land_points)]
+            closest = self.closest_point_on_segment(pos, p1, p2)
+            dist = math.hypot(pos[0] - closest[0], pos[1] - closest[1])
+            if dist < best_dist:
+                best_dist = dist
+                best_point = closest
+        if best_point is None:
+            for lp in land_points:
+                dist = math.hypot(pos[0] - lp[0], pos[1] - lp[1])
+                if dist < best_dist:
+                    best_dist = dist
+                    best_point = lp
+        return best_point
+
+    def closest_point_on_segment(self, point, seg_start, seg_end):
+        """计算点到线段的最短距离点。"""
+        px, py = point
+        x1, y1 = seg_start
+        x2, y2 = seg_end
+        dx, dy = x2 - x1, y2 - y1
+        if dx == 0 and dy == 0:
+            return seg_start
+        t = max(0, min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)))
+        return (x1 + t * dx, y1 + t * dy)
 
     def spawn_wave(self):
         """按比赛要求设计三种波次。
@@ -212,9 +302,12 @@ class RadarSystem:
 
     def spawn_fixed_land_target(self):
         """在陆地轮廓附近生成固定陆上节点，供CJ-10打击。"""
-        offset = random.choice(self.landmass[2:9])
-        jitter = pygame.Vector2(random.uniform(-18, 18), random.uniform(-14, 14))
-        pos = self.center_vector() + pygame.Vector2(offset) + jitter
+        land_edges = [(self.landmass[i], self.landmass[(i + 1) % len(self.landmass)]) for i in range(len(self.landmass))]
+        base_point = random.choice(land_edges)
+        edge_mid = ((base_point[0][0] + base_point[1][0]) / 2, (base_point[0][1] + base_point[1][1]) / 2)
+        land_edge_pos = pygame.Vector2(RADAR_CENTER) + pygame.Vector2(edge_mid) + self.landmass_offset
+        jitter = pygame.Vector2(random.uniform(-12, 12), random.uniform(-10, 10))
+        pos = land_edge_pos + jitter
         target = Target(self.next_id, TARGET_LAND, pos, pygame.Vector2(0, 0), "line", 0)
         target.detected = True
         target.tracked = True
@@ -317,7 +410,7 @@ class RadarSystem:
 
     def draw_landmass(self, surface):
         """绘制陆地轮廓，让陆上目标/CJ-10任务有地理语境。"""
-        land_points = [(RADAR_CENTER[0] + x, RADAR_CENTER[1] + y) for x, y in self.landmass]
+        land_points = [(RADAR_CENTER[0] + x + self.landmass_offset.x, RADAR_CENTER[1] + y + self.landmass_offset.y) for x, y in self.landmass]
         pygame.draw.polygon(surface, (17, 48, 37), land_points)
         pygame.draw.lines(surface, GREEN_DIM, False, land_points, 2)
         for point in land_points[::2]:

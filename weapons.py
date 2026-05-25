@@ -53,16 +53,15 @@ class Missile:
             "CJ-10": 880,
         }.get(missile_type, 1200)
         self.speed = kmh_to_px_per_sec(speed_kmh)
+        self.base_speed = self.speed
         self.alive = True
         self.trail = []
         self.age = 0.0
         self.terminal = False
+        self.terminal_phase = 0.0
 
     def update(self, dt):
-        """导弹持续追踪当前目标。
-
-        真实舰空导弹依靠舰载雷达、数据链和弹载导引头协同制导；这里用向量逼近展示其原理。
-        """
+        """导弹持续追踪当前目标，末端突防阶段实现加速效果。"""
         if not self.target or not self.target.alive:
             self.alive = False
             return False
@@ -72,14 +71,49 @@ class Missile:
             self.alive = False
             return True
         target_dir = direction.normalize()
-        self.terminal = self.type in ("YJ-18", "YJ-21") and direction.length() < 55
-        speed = self.speed * (1.85 if self.terminal and self.type == "YJ-18" else 2.4 if self.terminal and self.type == "YJ-21" else 1.0)
+        dist_to_target = direction.length()
+        
+        terminal_range = {
+            "HHQ-9B": 45,
+            "HHQ-16B": 40,
+            "YJ-18": 55,
+            "YJ-21": 60,
+            "CJ-10": 50,
+        }.get(self.type, 50)
+        
+        was_terminal = self.terminal
+        self.terminal = dist_to_target < terminal_range
+        
+        if self.terminal and not was_terminal:
+            self.terminal_phase = 0.0
+        
         if self.terminal:
-            weave = pygame.Vector2(-target_dir.y, target_dir.x) * math.sin(self.age * 24) * (0.55 if self.type == "YJ-18" else 0.9)
+            self.terminal_phase += dt
+            if self.type == "YJ-18":
+                speed_mult = 1.0 + min(self.terminal_phase * 2.5, 2.2)
+            elif self.type == "YJ-21":
+                speed_mult = 1.0 + min(self.terminal_phase * 3.0, 3.0)
+            elif self.type == "HHQ-9B":
+                speed_mult = 1.0 + min(self.terminal_phase * 1.8, 1.8)
+            elif self.type == "HHQ-16B":
+                speed_mult = 1.0 + min(self.terminal_phase * 1.6, 1.6)
+            elif self.type == "CJ-10":
+                speed_mult = 1.0 + min(self.terminal_phase * 1.2, 1.0)
+            else:
+                speed_mult = 1.85
+            speed = self.base_speed * speed_mult
+            
+            weave_amp = 0.55 if self.type == "YJ-18" else 0.9 if self.type == "YJ-21" else 0.3
+            weave_freq = 24 if self.type in ("YJ-18", "YJ-21") else 15
+            weave = pygame.Vector2(-target_dir.y, target_dir.x) * math.sin(self.age * weave_freq) * weave_amp
             target_dir = (target_dir + weave).normalize()
+        else:
+            speed = self.base_speed
+        
         self.pos += target_dir * speed * dt
         self.trail.append(tuple(self.pos))
-        self.trail = self.trail[-14:]
+        trail_length = 18 if self.terminal else 14
+        self.trail = self.trail[-trail_length:]
         return False
 
     def draw(self, surface):
@@ -90,7 +124,7 @@ class Missile:
         self.draw_missile_shape(surface, color)
 
     def draw_missile_shape(self, surface, color):
-        """用多边形绘制有朝向的导弹形状。"""
+        """用多边形绘制有朝向的导弹形状，末端突防时增加火焰效果。"""
         if self.target and self.target.alive:
             direction = self.target.pos - self.pos
         elif len(self.trail) >= 2:
@@ -103,6 +137,20 @@ class Missile:
         side = pygame.Vector2(-forward.y, forward.x)
         length = 18 if self.type in ("YJ-18", "YJ-21", "CJ-10") else 14
         width = 5 if self.type in ("YJ-18", "YJ-21") else 4
+        
+        if self.terminal:
+            length = int(length * (1.3 if self.type in ("YJ-18", "YJ-21") else 1.15))
+            flame_length = int(12 * min(self.terminal_phase, 1.0))
+            tail_pos = self.pos - forward * length * 0.42
+            flame_points = [
+                tail_pos,
+                tail_pos - forward * flame_length + side * (width * 0.6),
+                tail_pos - forward * flame_length - side * (width * 0.6),
+            ]
+            flame_color = (255, 100 + int(155 * min(self.terminal_phase, 1.0)), 0)
+            pygame.draw.polygon(surface, flame_color, flame_points)
+            pygame.draw.circle(surface, (255, 255, 200), (int(tail_pos.x), int(tail_pos.y)), 3)
+        
         nose = self.pos + forward * length * 0.58
         tail = self.pos - forward * length * 0.42
         body = [nose, tail + side * width, tail - side * width]
